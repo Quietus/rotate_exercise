@@ -1,43 +1,111 @@
 package rotate
 
 import (
+	"bytes"
+	"crypto/rand"
+	"io"
+	"os"
 	"testing"
 )
 
-func TestLeftRotate(t *testing.T) {
-	testCases := []struct {
-		name      string
-		input     []byte
-		rotations int
-		expected  []byte
-	}{
-		{"Case 1", []byte{2, 3, 4, 5}, 1, []byte{4, 6, 8, 10}},
-		{"Case 2", []byte{255, 0, 0, 0}, 1, []byte{254, 0, 0, 1}},
-		{"Case 3", []byte{128, 128, 128, 128}, 1, []byte{1, 1, 1, 1}},
+func compareFiles(file1, file2 io.ReadSeeker) (bool, error) {
+	_, err := file1.Seek(0, io.SeekStart)
+	if err != nil {
+		return false, err
 	}
-	for _, tc := range testCases {
-		result := LeftRotate(tc.input)
-		if result[0] != tc.expected[0] || result[1] != tc.expected[1] || result[2] != tc.expected[2] || result[3] != tc.expected[3] {
-			t.Errorf("LeftRotate failed for %s: got %v: expected: %v", tc.name, result, tc.expected)
+	_, err = file2.Seek(0, io.SeekStart)
+	if err != nil {
+		return false, err
+	}
+
+	buf1 := make([]byte, 1024)
+	buf2 := make([]byte, 1024)
+
+	for {
+		n1, err1 := file1.Read(buf1)
+		n2, err2 := file2.Read(buf2)
+
+		if n1 != n2 || (err1 != nil && err1 != io.EOF) || (err2 != nil && err2 != io.EOF) {
+			return false, nil
+		}
+
+		if n1 == 0 {
+			break
+		}
+
+		if !bytes.Equal(buf1[:n1], buf2[:n2]) {
+			return false, nil
 		}
 	}
+
+	return true, nil
 }
 
-func TestRightRotate(t *testing.T) {
-	testCases := []struct {
-		name      string
-		input     []byte
-		rotations int
-		expected  []byte
-	}{
-		{"Case 1", []byte{2, 3, 4, 5}, 1, []byte{129, 1, 130, 2}},
-		{"Case 2", []byte{255, 0, 0, 0}, 1, []byte{127, 128, 0, 0}},
-		{"Case 3", []byte{128, 128, 128, 128}, 1, []byte{64, 64, 64, 64}},
+func TestRotateFile(t *testing.T) {
+	var limit int64 = 1000
+	// Create a temporary input file with random data
+	inputFile, err := os.CreateTemp("", "input")
+	if err != nil {
+		t.Fatalf("Failed to create temporary input file: %v", err)
 	}
-	for _, tc := range testCases {
-		result := RightRotate(tc.input)
-		if result[0] != tc.expected[0] || result[1] != tc.expected[1] || result[2] != tc.expected[2] || result[3] != tc.expected[3] {
-			t.Errorf("RightRotate failed for %s: got %v: expected: %v", tc.name, result, tc.expected)
-		}
+	defer inputFile.Close()
+
+	_, err = io.Copy(inputFile, io.LimitReader(rand.Reader, limit))
+	if err != nil {
+		t.Fatalf("Failed to write random data to input file: %v", err)
 	}
+	inputFile.Seek(0, io.SeekStart)
+
+	// Create a temporary output file
+	leftOutputFile, err := os.CreateTemp("", "leftoutput")
+	if err != nil {
+		t.Fatalf("Failed to create temporary output file: %v", err)
+	}
+	defer leftOutputFile.Close()
+
+	// Test left rotation
+	err = RotateFile(inputFile, leftOutputFile, Left)
+	if err != nil {
+		t.Errorf("Left rotation failed: %v", err)
+	}
+
+	equal, err := compareFiles(inputFile, leftOutputFile)
+	if err != nil {
+		t.Errorf("Failed to compare files: %v", err)
+	}
+	if equal {
+		t.Errorf("Files are equal following left rotation, expected them to differ")
+	}
+
+	// Reset the left Output file's read position to the beginning for the next test
+	leftOutputFile.Seek(0, io.SeekStart)
+
+	rightOutputFile, err := os.CreateTemp("", "rightoutput")
+	if err != nil {
+		t.Fatalf("Failed to create temporary output file: %v", err)
+	}
+	defer rightOutputFile.Close()
+
+	// Test right rotation
+	err = RotateFile(leftOutputFile, rightOutputFile, Right)
+	if err != nil {
+		t.Errorf("Right rotation failed: %v", err)
+	}
+
+	equal, err = compareFiles(leftOutputFile, rightOutputFile)
+	if err != nil {
+		t.Errorf("Failed to compare files: %v", err)
+	}
+	if equal {
+		t.Errorf("Files are equal following right rotation, expected them to differ")
+	}
+
+	equal, err = compareFiles(inputFile, rightOutputFile)
+	if err != nil {
+		t.Errorf("Failed to compare files: %v", err)
+	}
+	if !equal {
+		t.Errorf("Files are not equal after left and right rotations, expected them to be equal")
+	}
+
 }
