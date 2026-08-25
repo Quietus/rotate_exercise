@@ -75,7 +75,7 @@ func (r *LeftRotator) Flush() error {
 		if err != nil {
 			return err
 		}
-	} else {
+	} else if r.lastBitSet {
 		_, err := r.output.Write([]byte{r.buffer})
 		if err != nil {
 			return err
@@ -112,7 +112,7 @@ func (r *RightRotator) Flush() error {
 	return nil
 }
 
-func RotateFile(inputFile io.ReadSeeker, outputFile io.WriteSeeker, direction string) error {
+func RotateFile(inputFile io.ReadSeeker, outputFile io.Writer, direction string) error {
 	var firstBit int = 0
 	var firstBitSet = false
 

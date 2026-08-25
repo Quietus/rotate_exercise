@@ -48,7 +48,10 @@ func TestRotateFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temporary input file: %v", err)
 	}
-	defer inputFile.Close()
+	t.Cleanup(func() {
+		inputFile.Close()
+		os.Remove(inputFile.Name())
+	})
 
 	_, err = io.Copy(inputFile, io.LimitReader(rand.Reader, limit))
 	if err != nil {
@@ -61,7 +64,10 @@ func TestRotateFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temporary output file: %v", err)
 	}
-	defer leftOutputFile.Close()
+	t.Cleanup(func() {
+		leftOutputFile.Close()
+		os.Remove(leftOutputFile.Name())
+	})
 
 	// Test left rotation
 	err = RotateFile(inputFile, leftOutputFile, Left)
@@ -84,7 +90,10 @@ func TestRotateFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temporary output file: %v", err)
 	}
-	defer rightOutputFile.Close()
+	t.Cleanup(func() {
+		rightOutputFile.Close()
+		os.Remove(rightOutputFile.Name())
+	})
 
 	// Test right rotation
 	err = RotateFile(leftOutputFile, rightOutputFile, Right)
@@ -107,5 +116,100 @@ func TestRotateFile(t *testing.T) {
 	if !equal {
 		t.Errorf("Files are not equal after left and right rotations, expected them to be equal")
 	}
+}
 
+func TestRotateFileInvalidDirection(t *testing.T) {
+	input := bytes.NewReader([]byte{0x01, 0x02, 0x03})
+	output := bytes.NewBuffer(nil)
+
+	err := RotateFile(input, output, "invalid_direction")
+	if err == nil {
+		t.Errorf("Expected error for invalid rotation direction, got nil")
+	}
+}
+
+func TestRotateFileEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name      string
+		inputData []byte
+		expected  []byte
+		direction string
+	}{
+		{
+			name:      "Empty file",
+			inputData: []byte{},
+			expected:  []byte{},
+			direction: Left,
+		},
+		{
+			name:      "Single byte file",
+			inputData: []byte{0xFF},
+			expected:  []byte{0xFF},
+			direction: Right,
+		},
+		{
+			name:      "Two byte file left rotation",
+			inputData: []byte{0x01, 0x02},
+			expected:  []byte{0x02, 0x04},
+			direction: Left,
+		},
+		{
+			name:      "Two byte file right rotation",
+			inputData: []byte{0x01, 0x02},
+			expected:  []byte{0x00, 0x81},
+			direction: Right,
+		},
+		{
+			name:      "All zero byte file left rotation",
+			inputData: []byte{0x00, 0x00, 0x00},
+			expected:  []byte{0x00, 0x00, 0x00},
+			direction: Left,
+		},
+		{
+			name:      "All zero byte file right rotation",
+			inputData: []byte{0x00, 0x00, 0x00},
+			expected:  []byte{0x00, 0x00, 0x00},
+			direction: Right,
+		},
+		{
+			name:      "All one byte file left rotation",
+			inputData: []byte{0xFF, 0xFF, 0xFF},
+			expected:  []byte{0xFF, 0xFF, 0xFF},
+			direction: Left,
+		},
+		{
+			name:      "All one byte file right rotation",
+			inputData: []byte{0xFF, 0xFF, 0xFF},
+			expected:  []byte{0xFF, 0xFF, 0xFF},
+			direction: Right,
+		},
+		{
+			name:      "Alternating pattern left rotation",
+			inputData: []byte{0xAA, 0x55, 0xAA, 0x55},
+			expected:  []byte{0x54, 0xAB, 0x54, 0xAB},
+			direction: Left,
+		},
+		{
+			name:      "Alternating pattern right rotation",
+			inputData: []byte{0x54, 0xAB, 0x54, 0xAB},
+			expected:  []byte{0xAA, 0x55, 0xAA, 0x55},
+			direction: Right,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := bytes.NewReader(tc.inputData)
+			output := bytes.NewBuffer(nil)
+
+			err := RotateFile(input, output, tc.direction)
+			if err != nil {
+				t.Fatalf("RotateFile failed: %v", err)
+			}
+
+			if !bytes.Equal(output.Bytes(), tc.expected) {
+				t.Errorf("Expected output %v, got %v", tc.expected, output.Bytes())
+			}
+		})
+	}
 }
